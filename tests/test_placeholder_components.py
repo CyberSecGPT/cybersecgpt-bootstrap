@@ -12,9 +12,7 @@ def test_template_manager_discovers_and_renders_templates(tmp_path: Path) -> Non
     templates_dir = tmp_path / "templates"
     template_dir = templates_dir / "bootstrap"
     template_dir.mkdir(parents=True)
-    (template_dir / "README.md").write_text(
-        "# {project_name}\n", encoding="utf-8"
-    )
+    (template_dir / "README.md").write_text("# {project_name}\n", encoding="utf-8")
     (template_dir / "src").mkdir()
     (template_dir / "src" / "__init__.py").write_text(
         "# generated for {project_name}\n", encoding="utf-8"
@@ -28,7 +26,63 @@ def test_template_manager_discovers_and_renders_templates(tmp_path: Path) -> Non
     manager.render("bootstrap", destination, replacements={"project_name": "demo"})
 
     assert (destination / "README.md").read_text(encoding="utf-8") == "# demo\n"
-    assert (destination / "src" / "__init__.py").read_text(encoding="utf-8") == "# generated for demo\n"
+    assert (destination / "src" / "__init__.py").read_text(
+        encoding="utf-8"
+    ) == "# generated for demo\n"
+
+
+def test_template_manager_renders_double_brace_placeholder(tmp_path: Path) -> None:
+    template = tmp_path / "templates" / "bootstrap"
+    template.mkdir(parents=True)
+    (template / "README.md").write_text("# {{ project_name }}\n", encoding="utf-8")
+
+    destination = tmp_path / "output"
+    TemplateManager(template.parent).render(
+        "bootstrap", destination, {"project_name": "demo"}
+    )
+
+    assert (destination / "README.md").read_text(encoding="utf-8") == "# demo\n"
+
+
+def test_template_manager_renders_package_name_in_path(tmp_path: Path) -> None:
+    template = tmp_path / "templates" / "bootstrap"
+    package_dir = template / "src" / "{{ package_name }}"
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+
+    destination = tmp_path / "output"
+    TemplateManager(template.parent).render(
+        "bootstrap", destination, {"project_name": "My Project"}
+    )
+
+    assert (destination / "src" / "my_project" / "__init__.py").is_file()
+
+
+def test_template_manager_rejects_unresolved_placeholder(tmp_path: Path) -> None:
+    template = tmp_path / "templates" / "bootstrap"
+    template.mkdir(parents=True)
+    (template / "README.md").write_text(
+        "# {{ project_name }} by {{ author }}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match=r"Unresolved required placeholder.*author"):
+        TemplateManager(template.parent).render(
+            "bootstrap", tmp_path / "output", {"project_name": "demo"}
+        )
+
+
+def test_template_manager_copies_binary_file_unchanged(tmp_path: Path) -> None:
+    template = tmp_path / "templates" / "bootstrap"
+    template.mkdir(parents=True)
+    binary_content = b"\x89PNG\r\n\x1a\n\xff{project_name}\x00"
+    (template / "logo.png").write_bytes(binary_content)
+
+    destination = tmp_path / "output"
+    TemplateManager(template.parent).render(
+        "bootstrap", destination, {"project_name": "demo"}
+    )
+
+    assert (destination / "logo.png").read_bytes() == binary_content
 
 
 def test_template_manager_validates_template_directory(tmp_path: Path) -> None:
@@ -45,13 +99,19 @@ def test_template_manager_validates_template_directory(tmp_path: Path) -> None:
         manager.validate("missing")
 
 
-def test_template_list_cli_command_prints_discovered_templates(tmp_path: Path, capsys) -> None:
+def test_template_list_cli_command_prints_discovered_templates(
+    tmp_path: Path, capsys
+) -> None:
     templates_dir = tmp_path / "templates"
     (templates_dir / "bootstrap").mkdir(parents=True)
-    (templates_dir / "bootstrap" / "README.md").write_text("# template\n", encoding="utf-8")
+    (templates_dir / "bootstrap" / "README.md").write_text(
+        "# template\n", encoding="utf-8"
+    )
 
     parser = cli.build_parser()
-    args = parser.parse_args(["template", "list", "--templates-dir", str(templates_dir)])
+    args = parser.parse_args(
+        ["template", "list", "--templates-dir", str(templates_dir)]
+    )
 
     assert args.func(args) == 0
     captured = capsys.readouterr()
@@ -101,8 +161,12 @@ def test_template_show_and_validate_cli_commands(tmp_path: Path, capsys) -> None
     (template_dir / "assets").mkdir()
 
     parser = cli.build_parser()
-    show_args = parser.parse_args(["template", "show", "bootstrap", "--templates-dir", str(templates_dir)])
-    validate_args = parser.parse_args(["template", "validate", "bootstrap", "--templates-dir", str(templates_dir)])
+    show_args = parser.parse_args(
+        ["template", "show", "bootstrap", "--templates-dir", str(templates_dir)]
+    )
+    validate_args = parser.parse_args(
+        ["template", "validate", "bootstrap", "--templates-dir", str(templates_dir)]
+    )
 
     assert show_args.func(show_args) == 0
     assert validate_args.func(validate_args) == 0

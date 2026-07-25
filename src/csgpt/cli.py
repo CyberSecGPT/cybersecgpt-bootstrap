@@ -162,9 +162,7 @@ def _handle_template_apply(args: argparse.Namespace) -> int:
         return 1
 
     if not template_path.is_dir():
-        print(
-            f"Template apply failed: template '{template_name}' is not a directory."
-        )
+        print(f"Template apply failed: template '{template_name}' is not a directory.")
         return 1
 
     manager = TemplateManager(templates_dir=templates_dir)
