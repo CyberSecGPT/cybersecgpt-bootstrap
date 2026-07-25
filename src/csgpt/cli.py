@@ -10,13 +10,35 @@ import argparse
 import logging
 from pathlib import Path
 from pprint import pprint
+import re
 from typing import Optional
 
 from csgpt.config import ConfigurationError, ConfigurationManager
 from csgpt.doctor import DoctorService
 from csgpt.repository import RepositoryManager, RepositoryRegistryError
+from csgpt.templates import TemplateManager
 
 logger = logging.getLogger(__name__)
+
+
+def _build_template_replacements(args: argparse.Namespace) -> dict[str, str]:
+    project_name = getattr(args, "project_name", "").strip() or "project"
+    package_name = getattr(args, "package_name", "").strip()
+    if not package_name:
+        package_name = re.sub(r"[^0-9A-Za-z]+", "_", project_name).strip("_").lower()
+        if not package_name:
+            package_name = "project"
+
+    return {
+        "project_name": project_name,
+        "package_name": package_name,
+        "author": getattr(args, "author", "").strip(),
+        "organization": getattr(args, "organization", "").strip(),
+        "description": getattr(args, "description", "").strip(),
+        "version": getattr(args, "version", "").strip(),
+        "repository_url": getattr(args, "repository_url", "").strip(),
+        "license": getattr(args, "license", "").strip(),
+    }
 
 
 def _handle_init(args: argparse.Namespace) -> int:
@@ -106,6 +128,55 @@ def _handle_docs_validate(args: argparse.Namespace) -> int:
 
 def _handle_template_apply(args: argparse.Namespace) -> int:
     logger.info("Running template apply with args=%s", args)
+
+    template_name = getattr(args, "name", "").strip()
+    destination = Path(getattr(args, "destination", Path.cwd())).expanduser()
+    templates_dir = Path(getattr(args, "templates_dir", Path("templates"))).expanduser()
+    project_name = getattr(args, "project_name", "").strip() or "project"
+    replacements = _build_template_replacements(args)
+
+    if not template_name:
+        print("Template apply failed: template name is required.")
+        return 1
+
+    if not templates_dir.exists():
+        print(
+            "Template apply failed: templates directory was not found at "
+            f"{templates_dir}."
+        )
+        return 1
+
+    if not templates_dir.is_dir():
+        print(
+            "Template apply failed: templates path is not a directory: "
+            f"{templates_dir}."
+        )
+        return 1
+
+    template_path = templates_dir / template_name
+    if not template_path.exists():
+        print(
+            "Template apply failed: no template named "
+            f"'{template_name}' was found in {templates_dir}."
+        )
+        return 1
+
+    if not template_path.is_dir():
+        print(f"Template apply failed: template '{template_name}' is not a directory.")
+        return 1
+
+    manager = TemplateManager(templates_dir=templates_dir)
+    try:
+        manager.render(template_name, destination, replacements=replacements)
+    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        logger.error("Template apply failed: %s", exc)
+        print(f"Template apply failed: {exc}")
+        return 1
+
+    print(
+        f"Applied template '{template_name}' to {destination} "
+        f"using project name '{project_name}'."
+    )
     return 0
 
 
@@ -114,8 +185,107 @@ def _handle_template_update(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_template_show(args: argparse.Namespace) -> int:
+    logger.info("Running template show with args=%s", args)
+
+    template_name = getattr(args, "name", "").strip()
+    templates_dir = Path(getattr(args, "templates_dir", Path("templates"))).expanduser()
+    manager = TemplateManager(templates_dir=templates_dir)
+
+    if not template_name:
+        print("Template show failed: template name is required.")
+        return 1
+
+    if not templates_dir.exists():
+        print(
+            "Template show failed: templates directory was not found: "
+            f"{templates_dir}"
+        )
+        return 1
+
+    if template_name not in manager.list():
+        print(f"Template show failed: template '{template_name}' was not found.")
+        return 1
+
+    template_path = templates_dir / template_name
+    print(f"Template: {template_name}")
+    print(f"Path: {template_path}")
+    print("Files:")
+    for path in sorted(template_path.rglob("*")):
+        if path.is_file():
+            print(path.relative_to(template_path))
+
+    return 0
+
+
+def _handle_template_validate(args: argparse.Namespace) -> int:
+    logger.info("Running template validate with args=%s", args)
+
+    template_name = getattr(args, "name", "").strip()
+    templates_dir = Path(getattr(args, "templates_dir", Path("templates"))).expanduser()
+    manager = TemplateManager(templates_dir=templates_dir)
+
+    if not template_name:
+        print("Template validate failed: template name is required.")
+        return 1
+
+    if not templates_dir.exists():
+        print(
+            "Template validate failed: templates directory was not found: "
+            f"{templates_dir}"
+        )
+        return 1
+
+    try:
+        valid = manager.validate(template_name)
+    except (ValueError, NotADirectoryError) as exc:
+        print(f"Template validate failed: {exc}")
+        return 1
+
+    if valid:
+        print(f"Template '{template_name}' is valid.")
+        return 0
+
+    print(f"Template '{template_name}' is invalid.")
+    return 1
+
+
 def _handle_template_list(args: argparse.Namespace) -> int:
     logger.info("Running template list with args=%s", args)
+
+    templates_dir = getattr(args, "templates_dir", None)
+    if templates_dir is None:
+        templates_dir = Path("templates")
+
+    templates_dir = Path(templates_dir).expanduser()
+    if not templates_dir.exists():
+        print(
+            "No project templates were discovered because the templates "
+            f"directory was not found: {templates_dir}."
+        )
+        return 1
+
+    if not templates_dir.is_dir():
+        print(
+            "No project templates were discovered because the templates "
+            f"path is not a directory: {templates_dir}."
+        )
+        return 1
+
+    manager = TemplateManager(templates_dir=templates_dir)
+    templates = manager.list()
+    if not templates:
+        print(
+            f"No project templates were discovered in {templates_dir}. "
+            "Expected template directories such as 'bootstrap' or 'api'."
+        )
+        return 1
+
+    print(f"Searching templates in: {templates_dir}")
+    print("Templates discovered:")
+    for template_name in templates:
+        print(template_name)
+
     return 0
 
 
@@ -248,13 +418,87 @@ def build_parser() -> argparse.ArgumentParser:
     template_apply.add_argument(
         "--destination", type=Path, default=Path.cwd(), help="Destination directory"
     )
+    template_apply.add_argument(
+        "--templates-dir",
+        type=Path,
+        default=Path("templates"),
+        help="Directory containing template subdirectories",
+    )
+    template_apply.add_argument(
+        "--project-name",
+        default="project",
+        help="Project name to substitute into template content",
+    )
+    template_apply.add_argument(
+        "--package-name",
+        default="",
+        help="Package name to substitute into template content",
+    )
+    template_apply.add_argument(
+        "--author",
+        default="",
+        help="Author name to substitute into template content",
+    )
+    template_apply.add_argument(
+        "--organization",
+        default="",
+        help="Organization name to substitute into template content",
+    )
+    template_apply.add_argument(
+        "--description",
+        default="",
+        help="Project description to substitute into template content",
+    )
+    template_apply.add_argument(
+        "--version",
+        default="0.1.0",
+        help="Project version to substitute into template content",
+    )
+    template_apply.add_argument(
+        "--repository-url",
+        default="",
+        help="Repository URL to substitute into template content",
+    )
+    template_apply.add_argument(
+        "--license",
+        default="MIT",
+        help="License identifier to substitute into template content",
+    )
     template_apply.set_defaults(func=_handle_template_apply)
 
     template_update = template_subparsers.add_parser("update", help="Update templates")
     template_update.add_argument("name", help="Template name")
     template_update.set_defaults(func=_handle_template_update)
 
+    template_show = template_subparsers.add_parser("show", help="Show template details")
+    template_show.add_argument("name", help="Template name")
+    template_show.add_argument(
+        "--templates-dir",
+        type=Path,
+        default=Path("templates"),
+        help="Directory containing template subdirectories",
+    )
+    template_show.set_defaults(func=_handle_template_show)
+
+    template_validate = template_subparsers.add_parser(
+        "validate", help="Validate a template"
+    )
+    template_validate.add_argument("name", help="Template name")
+    template_validate.add_argument(
+        "--templates-dir",
+        type=Path,
+        default=Path("templates"),
+        help="Directory containing template subdirectories",
+    )
+    template_validate.set_defaults(func=_handle_template_validate)
+
     template_list = template_subparsers.add_parser("list", help="List templates")
+    template_list.add_argument(
+        "--templates-dir",
+        type=Path,
+        default=Path("templates"),
+        help="Directory containing template subdirectories",
+    )
     template_list.set_defaults(func=_handle_template_list)
 
     config_parser = subparsers.add_parser("config", help="Manage configuration")

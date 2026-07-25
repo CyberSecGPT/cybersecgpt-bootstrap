@@ -1,8 +1,4 @@
-"""Bootstrap orchestration placeholders (no business logic).
-
-This module is intentionally empty of implementation; it provides stubs
-and dataclasses to be filled in later.
-"""
+"""Bootstrap orchestration helpers for initializing a project skeleton."""
 
 from __future__ import annotations
 
@@ -24,6 +20,12 @@ class Bootstrapper:
     project_root: Path
 
     def run(self) -> None:
-        """Run bootstrap process. Not implemented in scaffold."""
-        logger.debug("Bootstrapper.run called for %s", self.project_root)
-        raise NotImplementedError("Bootstrap logic not implemented")
+        """Create the standard project directories for a new workspace."""
+        logger.debug("Bootstrapping project at %s", self.project_root)
+
+        directories = ["src", "tests", "docs", "configs", "templates", "scripts"]
+        for directory_name in directories:
+            directory = self.project_root / directory_name
+            directory.mkdir(parents=True, exist_ok=True)
+
+        logger.info("Bootstrap directories created under %s", self.project_root)

@@ -1,0 +1,9 @@
+logging:
+  level: INFO
+
+application:
+  name: {{ project_name }}
+  environment: development
+
+variables:
+  example: value

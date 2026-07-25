@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "{{ package_name }}"
+version = "{{ version }}"
+description = "{{ description }}"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "{{ author }}", email = "{{ author }}@example.com" }]
+license = { text = "{{ license }}" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.6",
+    "black>=24.0",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+{{ package_name }} = "{{ package_name }}.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 88
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
